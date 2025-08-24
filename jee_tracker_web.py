@@ -186,6 +186,49 @@ with st.sidebar:
     else:  # JEE Advanced
         max_per_subject = 60  # per subject per paper
         total_max = 360
+        with st.form("add_score"):
+    st.subheader("➕ Add New Score")
+
+    name = st.text_input("Student Name")
+
+    if exam_type == "JEE Main (300)":
+        physics = st.number_input("Physics (out of 100)", 0, 100, 0)
+        chemistry = st.number_input("Chemistry (out of 100)", 0, 100, 0)
+        maths = st.number_input("Maths (out of 100)", 0, 100, 0)
+
+        total = physics + chemistry + maths
+
+    else:  # JEE Advanced
+        st.markdown("**Paper 1**")
+        phy1 = st.number_input("Physics (P1, out of 60)", 0, 60, 0)
+        chem1 = st.number_input("Chemistry (P1, out of 60)", 0, 60, 0)
+        math1 = st.number_input("Maths (P1, out of 60)", 0, 60, 0)
+
+        st.markdown("**Paper 2**")
+        phy2 = st.number_input("Physics (P2, out of 60)", 0, 60, 0)
+        chem2 = st.number_input("Chemistry (P2, out of 60)", 0, 60, 0)
+        math2 = st.number_input("Maths (P2, out of 60)", 0, 60, 0)
+
+        physics = phy1 + phy2
+        chemistry = chem1 + chem2
+        maths = math1 + math2
+        total = physics + chemistry + maths
+
+    submitted = st.form_submit_button("Save Score")
+
+    if submitted and name:
+        new_row = pd.DataFrame([{
+            "Student": name,
+            "Exam": exam_type,
+            "Physics": physics,
+            "Chemistry": chemistry,
+            "Maths": maths,
+            "Total": total
+        }])
+        df = pd.concat([df, new_row], ignore_index=True)
+        save_data(df)
+        st.success(f"Saved {name}'s score: {total}/{total_max}")
+
 
     candidate_count = st.number_input(
         "Estimated candidates (AIR calc)", 100000, 2_000_000, 1_000_000, step=50_000
@@ -430,4 +473,5 @@ with tab_settings:
 
 
         
+
 
