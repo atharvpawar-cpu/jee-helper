@@ -218,17 +218,6 @@ with st.form("add_score"):
         save_data(df)
         st.success(f"Saved {name}'s score: {total}/{total_max}")
 
-
-
-    candidate_count = st.number_input(
-        "Estimated candidates (AIR calc)", 100000, 2_000_000, 1_000_000, step=50_000
-    )
-
-    all_students = ["All"] + sorted([s for s in df["Student"].dropna().unique().tolist() if s])
-    who = st.selectbox("View for student", all_students, index=0)
-
-    view_df = df if who == "All" else df[df["Student"] == who]
-
     candidate_count = st.number_input("Estimated candidates (AIR calc)", 100000, 2_000_000, 1_000_000, step=50_000)
 
     all_students = ["All"] + sorted([s for s in df["Student"].dropna().unique().tolist() if s])
@@ -463,6 +452,7 @@ with tab_settings:
 
 
         
+
 
 
 
