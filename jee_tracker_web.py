@@ -35,6 +35,14 @@ with st.sidebar:
     all_students = ["All"] + sorted([s for s in df["Student"].dropna().unique().tolist() if s])
     who = st.selectbox("View for student", all_students, index=0)
     view_df = df if who == "All" else df[df["Student"] == who]
+    # ---- Exam-specific scoring caps ----
+if exam_type == "JEE Main (300)":
+    max_per_subject = 100   # per subject
+    total_max = 300
+else:  # JEE Advanced
+    max_per_subject = 120   # 60 per paper x 2 papers
+    total_max = 360
+
 
 # -------------------- ADD SCORE FORM --------------------
 with st.form("add_score"):
@@ -120,4 +128,5 @@ with tab_reports:
 
 with tab_settings:
     st.header("⚙️ Settings are in the sidebar")
+
 
