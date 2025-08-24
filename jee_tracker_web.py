@@ -173,8 +173,18 @@ df = ensure_types(df)
 tasks = load_csv(TASKS_FILE, ["Date","Task","Done"])
 if not tasks.empty:
     tasks["Date"] = pd.to_datetime(tasks["Date"], errors="coerce").dt.date
-
 # -------------------- SIDEBAR --------------------
+with st.sidebar:
+    exam_type = st.selectbox("Select Exam Type", ["JEE Main (300)", "JEE Advanced"])
+    candidate_count = st.number_input("Estimated candidates (AIR calc)", 100000, 2_000_000, 1_000_000, step=50_000)
+
+    all_students = ["All"] + sorted([s for s in df["Student"].dropna().unique().tolist() if s])
+    who = st.selectbox("View for student", all_students, index=0)
+
+    view_df = df if who == "All" else df[df["Student"] == who]
+
+
+# -------------------- FORM --------------------
 with st.form("add_score"):
     st.subheader("➕ Add New Score")
 
@@ -184,7 +194,6 @@ with st.form("add_score"):
         physics = st.number_input("Physics (out of 100)", 0, 100, 0)
         chemistry = st.number_input("Chemistry (out of 100)", 0, 100, 0)
         maths = st.number_input("Maths (out of 100)", 0, 100, 0)
-
         total = physics + chemistry + maths
 
     else:  # JEE Advanced
@@ -203,6 +212,7 @@ with st.form("add_score"):
         maths = math1 + math2
         total = physics + chemistry + maths
 
+    # ✅ Submit button is inside the form
     submitted = st.form_submit_button("Save Score")
 
     if submitted and name:
@@ -217,18 +227,14 @@ with st.form("add_score"):
         df = pd.concat([df, new_row], ignore_index=True)
         save_data(df)
         st.success(f"Saved {name}'s score: {total}/{total_max}")
-with st.sidebar:
-    candidate_count = st.number_input("Estimated candidates (AIR calc)", 100000, 2_000_000, 1_000_000, step=50_000)
 
-    all_students = ["All"] + sorted([s for s in df["Student"].dropna().unique().tolist() if s])
-    who = st.selectbox("View for student", all_students, index=0)
-
-    view_df = df if who == "All" else df[df["Student"] == who]
 
 # -------------------- TABS --------------------
 tab_dash, tab_add, tab_charts, tab_plan, tab_leader, tab_reports, tab_settings = st.tabs(
     ["Dashboard", "Add Test", "Charts", "Planner", "Leaderboard", "Reports", "Settings"]
 )
+
+
 
 # -------------------- DASHBOARD --------------------
 with tab_dash:
@@ -452,6 +458,7 @@ with tab_settings:
 
 
         
+
 
 
 
