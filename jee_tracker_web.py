@@ -14,7 +14,7 @@ st.set_page_config(page_title="JEE Prep Tracker", page_icon="📘", layout="wide
 DATA_FILE = "jee_data.csv"
 TASKS_FILE = "tasks.csv"
 
-# -------------------- THEME TOGGLE (charts) --------------------
+# -------------------- THEME TOGGLE (charts only) --------------------
 dark = st.toggle("🌙 Dark chart theme", value=True)
 plt.style.use("dark_background" if dark else "default")
 
@@ -22,10 +22,9 @@ plt.style.use("dark_background" if dark else "default")
 def load_csv(path: str, cols: list) -> pd.DataFrame:
     if os.path.exists(path):
         df = pd.read_csv(path)
-        # add missing columns if any
         for c in cols:
             if c not in df.columns:
-                df[c] = [] if c != "Date" else pd.NaT
+                df[c] = [] if c not in ("Date",) else pd.NaT
         return df
     return pd.DataFrame(columns=cols)
 
@@ -33,42 +32,47 @@ def save_csv(df: pd.DataFrame, path: str):
     df.to_csv(path, index=False)
 
 def ensure_types(df: pd.DataFrame) -> pd.DataFrame:
-    if not df.empty:
-        df["Date"] = pd.to_datetime(df["Date"]).dt.date
-        for c in ["Physics", "Chemistry", "Maths", "Total"]:
+    if df.empty:
+        return df
+    df["Date"] = pd.to_datetime(df["Date"], errors="coerce").dt.date
+    for c in ["Physics", "Chemistry", "Maths", "Total"]:
+        if c in df.columns:
             df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0).astype(int)
-        if "StudyHours" in df.columns:
-            df["StudyHours"] = pd.to_numeric(df["StudyHours"], errors="coerce").fillna(0.0)
+    if "StudyHours" in df.columns:
+        df["StudyHours"] = pd.to_numeric(df["StudyHours"], errors="coerce").fillna(0.0)
+    if "Student" in df.columns:
+        df["Student"] = df["Student"].fillna("You").astype(str)
     return df
 
 def estimate_percentile(total_score: int, total_max: int = 300) -> float:
-    # heuristic using normal CDF-ish shape
     mean = 0.5 * total_max
     std = max(1.0, 0.20 * total_max)
     z = (total_score - mean) / std
     t = 1.0 / (1.0 + 0.2316419 * abs(z))
     d = 0.3989423 * np.exp(-z*z/2.0)
     prob = 1 - d*(1.330274*t - 1.821256*t**2 + 1.781478*t**3 - 0.356538*t**4 + 0.3193815*t**5)
-    if z < 0: prob = 1 - prob
+    if z < 0:
+        prob = 1 - prob
     return float(np.clip(prob*100, 0, 100))
 
-def estimate_rank(percentile: float, candidates: int = 1000000) -> int:
-    # AIR ≈ (100 - percentile)/100 * candidates
+def estimate_rank(percentile: float, candidates: int = 1_000_000) -> int:
     return max(1, int(round((100.0 - percentile) / 100.0 * candidates)) + 1)
 
 def weakness_tip(subject: str) -> str:
     tips = {
         "Physics": "Focus on mechanics basics (vectors, NLM), revise formula sheet daily, and practice error analysis.",
-        "Chemistry": "Revise NCERT line-by-line, especially Inorganic. Practice Organic reaction mechanisms and P&C numericals.",
+        "Chemistry": "Revise NCERT line-by-line, especially Inorganic. Practice Organic mechanisms and P&C numericals.",
         "Maths": "Strengthen algebra & coordinate geometry basics. Drill standard problems and keep a ‘mistake log’.",
-        "Balanced": "You’re fairly balanced. Push recent weak chapters and improve test strategy (time split & guessing control)."
+        "Balanced": "You’re fairly balanced. Push recent weak chapters and improve test strategy (time split & guessing).",
     }
     return tips.get(subject, "Revise fundamentals and solve timed mixed sets.")
 
-def calc_streak(dates: list[date]) -> int:
+def calc_streak(dates: list) -> int:
     if not dates:
         return 0
-    s = sorted(set(dates), reverse=True)
+    s = sorted({d for d in dates if isinstance(d, date)}, reverse=True)
+    if not s:
+        return 0
     streak = 1 if s[0] == date.today() else 0
     cur = s[0]
     for d in s[1:]:
@@ -80,7 +84,6 @@ def calc_streak(dates: list[date]) -> int:
     return streak
 
 def calendar_heatmap(df: pd.DataFrame, value_col: str = "Total"):
-    """Create a calendar-like heatmap (week vs weekday) with Plotly."""
     if df.empty:
         st.info("Add tests to see the calendar heatmap.")
         return
@@ -89,21 +92,14 @@ def calendar_heatmap(df: pd.DataFrame, value_col: str = "Total"):
     dfx["Week"] = dfx["Date"].dt.isocalendar().week.astype(int)
     dfx["Year"] = dfx["Date"].dt.year.astype(int)
     dfx["Weekday"] = dfx["Date"].dt.weekday  # 0=Mon ... 6=Sun
-    pivot = dfx.pivot_table(index=["Year","Weekday"], columns="Week", values=value_col, aggfunc="mean")
-    pivot = pivot.sort_index(level=0, ascending=True)
-
-    for (yr, wd), row in pivot.iterrows():
-        pass
-
-    # Build figure for latest year only (cleaner)
-    latest_year = dfx["Year"].max()
+    latest_year = int(dfx["Year"].max())
     grid = dfx[dfx["Year"] == latest_year].pivot_table(
         index="Weekday", columns="Week", values=value_col, aggfunc="mean"
     )
     grid = grid.sort_index()  # 0..6
     fig = go.Figure(data=go.Heatmap(
-        z=grid.values,
-        x=grid.columns.astype(str),
+        z=grid.values if grid.size else [[None]],
+        x=[str(x) for x in grid.columns] if not grid.empty else ["-"],
         y=["Mon","Tue","Wed","Thu","Fri","Sat","Sun"],
         hoverongaps=False,
         coloraxis="coloraxis"
@@ -118,7 +114,6 @@ def calendar_heatmap(df: pd.DataFrame, value_col: str = "Total"):
     st.plotly_chart(fig, use_container_width=True)
 
 def pdf_report(df: pd.DataFrame, fname: str = "JEE_Report.pdf"):
-    """Generate a simple PDF report and return bytes."""
     buf = BytesIO()
     c = canvas.Canvas(buf, pagesize=A4)
     width, height = A4
@@ -131,7 +126,6 @@ def pdf_report(df: pd.DataFrame, fname: str = "JEE_Report.pdf"):
     if df.empty:
         c.drawString(40, y, "No data available.")
     else:
-        # Stats
         latest = df.iloc[-1]
         avgP = df["Physics"].mean(); bestP = df["Physics"].max()
         avgC = df["Chemistry"].mean(); bestC = df["Chemistry"].max()
@@ -145,7 +139,6 @@ def pdf_report(df: pd.DataFrame, fname: str = "JEE_Report.pdf"):
         c.drawString(40, y, f"Bests:    Physics {bestP}, Chemistry {bestC}, Maths {bestM}, Total {bestT}")
         y -= 30
 
-        # Percentile/Rank
         perc = estimate_percentile(int(latest["Total"]))
         rank = estimate_rank(perc)
         c.drawString(40, y, f"Estimated Percentile: {perc:.2f}")
@@ -153,11 +146,10 @@ def pdf_report(df: pd.DataFrame, fname: str = "JEE_Report.pdf"):
         c.drawString(40, y, f"Estimated AIR: {rank}")
         y -= 30
 
-        # Weakness
         means = {
-            "Physics": df["Physics"].tail(5).mean() if len(df)>=1 else 0,
-            "Chemistry": df["Chemistry"].tail(5).mean() if len(df)>=1 else 0,
-            "Maths": df["Maths"].tail(5).mean() if len(df)>=1 else 0,
+            "Physics": df["Physics"].tail(5).mean() if len(df) else 0,
+            "Chemistry": df["Chemistry"].tail(5).mean() if len(df) else 0,
+            "Maths": df["Maths"].tail(5).mean() if len(df) else 0,
         }
         weakest = min(means, key=means.get)
         tip = weakness_tip(weakest)
@@ -166,9 +158,8 @@ def pdf_report(df: pd.DataFrame, fname: str = "JEE_Report.pdf"):
         c.drawString(40, y, f"Tip: {tip[:85]}")
         y -= 40
 
-        # Note
         c.setFont("Helvetica-Oblique", 9)
-        c.drawString(40, y, "Note: Percentile & AIR are rough estimates for motivation; actual results vary by shift & normalization.")
+        c.drawString(40, y, "Note: Percentile & AIR are rough estimates; actual results vary by shift & normalization.")
 
     c.showPage()
     c.save()
@@ -181,20 +172,18 @@ df = ensure_types(df)
 
 tasks = load_csv(TASKS_FILE, ["Date","Task","Done"])
 if not tasks.empty:
-    tasks["Date"] = pd.to_datetime(tasks["Date"]).dt.date
+    tasks["Date"] = pd.to_datetime(tasks["Date"], errors="coerce").dt.date
 
 # -------------------- SIDEBAR --------------------
 with st.sidebar:
     st.header("⚙️ Settings")
     max_per_subject = st.number_input("Max marks per subject", 1, 300, 60)
     total_max = max_per_subject * 3
-    candidate_count = st.number_input("Estimated candidates (AIR calc)", 100000, 2000000, 1000000, step=50000)
+    candidate_count = st.number_input("Estimated candidates (AIR calc)", 100000, 2_000_000, 1_000_000, step=50_000)
 
-    # Student filter
     all_students = ["All"] + sorted([s for s in df["Student"].dropna().unique().tolist() if s])
     who = st.selectbox("View for student", all_students, index=0)
 
-    # Data filter
     view_df = df if who == "All" else df[df["Student"] == who]
 
 # -------------------- TABS --------------------
@@ -223,7 +212,6 @@ with tab_dash:
 
     st.divider()
 
-    # Weakness analyzer (recent 5)
     st.markdown("### 🧠 Weakness Analyzer (last 5 tests)")
     if view_df.empty:
         st.info("Add tests to analyze strengths/weaknesses.")
@@ -267,6 +255,7 @@ with tab_add:
             "Total": total, "StudyHours": float(hours)
         }
         df = pd.concat([df, pd.DataFrame([new])], ignore_index=True)
+        df = ensure_types(df)
         save_csv(df, DATA_FILE)
         st.success(f"Saved: {student_name} | {dt} | P {phy} | C {chem} | M {math} | Total {total}")
 
@@ -283,7 +272,6 @@ with tab_charts:
         vdf = view_df.sort_values("Date")
         tests = np.arange(1, len(vdf) + 1)
 
-        # Line chart
         st.markdown("**Subject-wise & Total (Line)**")
         fig1, ax1 = plt.subplots()
         ax1.plot(tests, vdf["Physics"], marker="o", label="Physics")
@@ -294,7 +282,6 @@ with tab_charts:
         ax1.grid(True); ax1.legend()
         st.pyplot(fig1)
 
-        # Subject bars
         st.markdown("**Per-Test Subject Comparison (Bars)**")
         idx = np.arange(len(vdf)); width = 0.25
         fig2, ax2 = plt.subplots()
@@ -306,13 +293,13 @@ with tab_charts:
         ax2.legend()
         st.pyplot(fig2)
 
-        # Percentile & AIR trend (based on totals)
         st.markdown("**Percentile & AIR Trend**")
         percs = [estimate_percentile(int(t), total_max) for t in vdf["Total"]]
         ranks = [estimate_rank(p, candidate_count) for p in percs]
         fig3 = go.Figure()
         fig3.add_scatter(y=percs, x=list(range(1, len(percs)+1)), mode="lines+markers", name="Percentile")
-        fig3.add_scatter(y=ranks, x=list(range(1, len(ranks)+1)), mode="lines+markers", name="AIR (lower is better)", yaxis="y2")
+        fig3.add_scatter(y=ranks, x=list(range(1, len(ranks)+1)), mode="lines+markers",
+                         name="AIR (lower is better)", yaxis="y2")
         fig3.update_layout(
             template="plotly_dark" if dark else "plotly",
             yaxis=dict(title="Percentile"),
@@ -341,7 +328,6 @@ with tab_plan:
     if tasks.empty:
         st.info("No tasks yet.")
     else:
-        # editable checklist
         for i, r in tasks.sort_values(["Done","Date"]).iterrows():
             checked = st.checkbox(f"{r['Task']}  — ({r['Date']})", value=bool(r["Done"]), key=f"task_{i}")
             tasks.at[i, "Done"] = 1 if checked else 0
@@ -363,6 +349,67 @@ with tab_leader:
 # -------------------- REPORTS --------------------
 with tab_reports:
     st.subheader("Export / Import / PDF Report")
-    colr1, colr2 = st.columns(2)
-    with colr1:
 
+    colr1, colr2 = st.columns(2)
+
+    with colr1:
+        scope = st.radio("Export which data?", ["Filtered (by student)", "All"], horizontal=True)
+        exp_df = view_df.copy() if scope.startswith("Filtered") else df.copy()
+        csv_bytes = exp_df.to_csv(index=False).encode("utf-8")
+        st.download_button("⬇️ Download CSV", data=csv_bytes, file_name="jee_prep_data.csv", mime="text/csv")
+
+        if not exp_df.empty:
+            pdf_bytes = pdf_report(exp_df)
+            st.download_button("⬇️ Download PDF Report", data=pdf_bytes, file_name="JEE_Report.pdf", mime="application/pdf")
+        else:
+            st.info("No data to include in PDF report yet.")
+
+    with colr2:
+        uploaded = st.file_uploader("📥 Import CSV to merge", type=["csv"])
+        if uploaded is not None:
+            try:
+                new_df = pd.read_csv(uploaded)
+                needed = {"Date","Student","Physics","Chemistry","Maths","Total"}
+                if not needed.issubset(set(new_df.columns)):
+                    st.error("CSV missing required columns.")
+                else:
+                    new_df["Date"] = pd.to_datetime(new_df["Date"], errors="coerce").dt.date
+                    if "StudyHours" not in new_df.columns:
+                        new_df["StudyHours"] = 0.0
+                    st.success("Preview of imported data:")
+                    st.dataframe(new_df.head(), use_container_width=True)
+                    if st.button("Merge into current data"):
+                        merged = pd.concat([df, new_df], ignore_index=True).drop_duplicates()
+                        merged = ensure_types(merged)
+                        save_csv(merged, DATA_FILE)
+                        st.success("✅ Imported & merged! Reload the page to see updated charts.")
+            except Exception as e:
+                st.error(f"Import failed: {e}")
+
+# -------------------- SETTINGS --------------------
+with tab_settings:
+    st.subheader("Data Management")
+    colS1, colS2 = st.columns(2)
+    with colS1:
+        if st.button("🧹 Clear ALL data (scores)"):
+            df = pd.DataFrame(columns=["Date","Student","Physics","Chemistry","Maths","Total","StudyHours"])
+            save_csv(df, DATA_FILE)
+            st.warning("All score data cleared. (Charts will be empty until you add tests.)")
+
+    with colS2:
+        if who != "All" and not view_df.empty:
+            if st.button(f"🧽 Clear data for '{who}' only"):
+                df = df[df["Student"] != who]
+                save_csv(df, DATA_FILE)
+                st.warning(f"All data for '{who}' cleared.")
+        else:
+            st.info("Select a specific student in the sidebar to clear their data only.")
+
+    st.divider()
+    with st.expander("📄 See raw data"):
+        st.dataframe(df.sort_values("Date"), use_container_width=True)
+
+    st.caption("Tip: Full dark mode for the app is available in the Streamlit menu → Settings → Theme → Dark.")
+
+
+        
