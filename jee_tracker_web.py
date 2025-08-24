@@ -175,18 +175,7 @@ if not tasks.empty:
     tasks["Date"] = pd.to_datetime(tasks["Date"], errors="coerce").dt.date
 
 # -------------------- SIDEBAR --------------------
-with st.sidebar:
-    st.header("⚙️ Settings")
-
-    exam_type = st.radio("Select Exam Type", ["JEE Main (300)", "JEE Advanced (360)"])
-
-    if exam_type == "JEE Main (300)":
-        max_per_subject = 100
-        total_max = 300
-    else:  # JEE Advanced
-        max_per_subject = 60  # per subject per paper
-        total_max = 360
-        with st.form("add_score"):
+with st.form("add_score"):
     st.subheader("➕ Add New Score")
 
     name = st.text_input("Student Name")
@@ -228,6 +217,7 @@ with st.sidebar:
         df = pd.concat([df, new_row], ignore_index=True)
         save_data(df)
         st.success(f"Saved {name}'s score: {total}/{total_max}")
+
 
 
     candidate_count = st.number_input(
@@ -473,5 +463,6 @@ with tab_settings:
 
 
         
+
 
 
