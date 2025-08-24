@@ -177,8 +177,25 @@ if not tasks.empty:
 # -------------------- SIDEBAR --------------------
 with st.sidebar:
     st.header("⚙️ Settings")
-    max_per_subject = st.number_input("Max marks per subject", 1, 300, 60)
-    total_max = max_per_subject * 3
+
+    exam_type = st.radio("Select Exam Type", ["JEE Main (300)", "JEE Advanced (360)"])
+
+    if exam_type == "JEE Main (300)":
+        max_per_subject = 100
+        total_max = 300
+    else:  # JEE Advanced
+        max_per_subject = 60  # per subject per paper
+        total_max = 360
+
+    candidate_count = st.number_input(
+        "Estimated candidates (AIR calc)", 100000, 2_000_000, 1_000_000, step=50_000
+    )
+
+    all_students = ["All"] + sorted([s for s in df["Student"].dropna().unique().tolist() if s])
+    who = st.selectbox("View for student", all_students, index=0)
+
+    view_df = df if who == "All" else df[df["Student"] == who]
+
     candidate_count = st.number_input("Estimated candidates (AIR calc)", 100000, 2_000_000, 1_000_000, step=50_000)
 
     all_students = ["All"] + sorted([s for s in df["Student"].dropna().unique().tolist() if s])
@@ -413,3 +430,4 @@ with tab_settings:
 
 
         
+
